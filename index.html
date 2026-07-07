@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>영수증 증빙 자료</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&family=Noto+Sans+KR:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="page">
+
+  <div class="letterhead">
+    <div class="eyebrow">RECEIPT DOCUMENTATION · 지출 증빙</div>
+    <h1>영수증 증빙 자료</h1>
+    <div class="subtitle" id="printDateLine">활동비 지출 내역 및 증빙 사진 정리</div>
+    <svg class="stamp" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="50" r="46" fill="none" stroke="#B23A2E" stroke-width="3"/>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="#B23A2E" stroke-width="1.2"/>
+      <text x="50" y="42" text-anchor="middle" fill="#B23A2E" font-family="'Noto Serif KR',serif" font-size="15" font-weight="700">증빙</text>
+      <text x="50" y="62" text-anchor="middle" fill="#B23A2E" font-family="'Noto Serif KR',serif" font-size="15" font-weight="700">완료</text>
+    </svg>
+  </div>
+
+  <div class="card no-print">
+    <p class="card-title">지출 항목 추가</p>
+    <form id="entryForm">
+      <div class="field">
+        <label for="f-date">날짜</label>
+        <input type="date" id="f-date" required>
+      </div>
+      <div class="field">
+        <label for="f-name">작성자 (선택)</label>
+        <input type="text" id="f-name" placeholder="예: 김OO">
+      </div>
+      <div class="field">
+        <label for="f-item">항목명</label>
+        <input type="text" id="f-item" placeholder="예: 답사 교통비" required>
+      </div>
+      <div class="field">
+        <label for="f-vendor">구매처 / 사용처</label>
+        <input type="text" id="f-vendor" placeholder="예: OO역 교통카드 충전">
+      </div>
+      <div class="field">
+        <label for="f-amount">금액 (원)</label>
+        <input type="number" id="f-amount" min="0" placeholder="0" required>
+      </div>
+      <div class="field">
+        <label for="f-photo">영수증 사진</label>
+        <div class="file-row">
+          <input type="file" id="f-photo" accept="image/*">
+          <img id="preview-thumb" alt="미리보기">
+        </div>
+      </div>
+      <div class="field full">
+        <label for="f-note">비고</label>
+        <textarea id="f-note" rows="2" placeholder="추가 설명이 있다면 입력하세요"></textarea>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary" id="submitBtn">항목 추가</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="status no-print" id="statusLine">불러오는 중…</div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th class="col-no">No.</th>
+          <th>날짜</th>
+          <th>항목명 / 구매처</th>
+          <th>작성자</th>
+          <th class="col-thumb">사진</th>
+          <th class="col-amount">금액</th>
+          <th class="no-print">삭제</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr class="empty-row"><td colspan="7">불러오는 중입니다…</td></tr>
+      </tbody>
+    </table>
+    <div class="summary">
+      <div class="count" id="countLine">총 0건</div>
+      <div class="total" id="totalLine">0원</div>
+    </div>
+  </div>
+
+  <div class="toolbar no-print">
+    <div class="hint">이 페이지에 입력한 내용은 모든 방문자에게 공유되어 함께 보입니다.</div>
+    <button class="btn-outline" id="printBtn">증빙 자료 출력하기</button>
+  </div>
+
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <img id="modalImg" src="" alt="영수증 확대 이미지">
+</div>
+
+<script>
+const STORAGE_KEY = 'receipts';
+let entries = [];
+
+const tbody = document.getElementById('tbody');
+const statusLine = document.getElementById('statusLine');
+const countLine = document.getElementById('countLine');
+const totalLine = document.getElementById('totalLine');
+const submitBtn = document.getElementById('submitBtn');
+const photoInput = document.getElementById('f-photo');
+const previewThumb = document.getElementById('preview-thumb');
+const modalBg = document.getElementById('modalBg');
+const modalImg = document.getElementById('modalImg');
+
+document.getElementById('f-date').valueAsDate = new Date();
+
+function won(n){
+  return Number(n||0).toLocaleString('ko-KR') + '원';
+}
+
+function render(){
+  if(entries.length === 0){
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">아직 등록된 항목이 없습니다. 위 양식에서 첫 항목을 추가해보세요.</td></tr>';
+  } else {
+    const sorted = [...entries].sort((a,b)=> (a.date||'').localeCompare(b.date||''));
+    tbody.innerHTML = sorted.map((e, i) => `
+      <tr>
+        <td class="col-no">${String(i+1).padStart(2,'0')}</td>
+        <td>${e.date || '-'}</td>
+        <td>
+          <div style="font-weight:500;">${escapeHtml(e.item)}</div>
+          ${e.vendor ? `<div style="font-size:12px;color:var(--ink-soft);">${escapeHtml(e.vendor)}</div>` : ''}
+          ${e.note ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${escapeHtml(e.note)}</div>` : ''}
+        </td>
+        <td>${escapeHtml(e.name || '-')}</td>
+        <td class="col-thumb">${e.photo ? `<img src="${e.photo}" onclick="openModal('${e.id}')">` : '<div class="no-photo">없음</div>'}</td>
+        <td class="col-amount">${won(e.amount)}</td>
+        <td class="col-del no-print"><button onclick="deleteEntry('${e.id}')">삭제</button></td>
+      </tr>
+    `).join('');
+  }
+  const total = entries.reduce((sum, e) => sum + (Number(e.amount)||0), 0);
+  countLine.textContent = `총 ${entries.length}건`;
+  totalLine.textContent = won(total);
+}
+
+function escapeHtml(s){
+  if(!s) return '';
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+window.openModal = function(id){
+  const e = entries.find(x => x.id === id);
+  if(!e || !e.photo) return;
+  modalImg.src = e.photo;
+  modalBg.classList.add('open');
+};
+modalBg.addEventListener('click', () => modalBg.classList.remove('open'));
+
+window.deleteEntry = async function(id){
+  if(!confirm('이 항목을 삭제할까요?')) return;
+  entries = entries.filter(e => e.id !== id);
+  render();
+  await save();
+};
+
+async function load(){
+  try{
+    const result = await window.storage.get(STORAGE_KEY, true);
+    entries = result ? JSON.parse(result.value) : [];
+  }catch(err){
+    entries = [];
+  }
+  statusLine.textContent = '';
+  render();
+}
+
+async function save(){
+  try{
+    const result = await window.storage.set(STORAGE_KEY, JSON.stringify(entries), true);
+    if(!result){
+      statusLine.textContent = '저장에 실패했습니다. 다시 시도해주세요.';
+    }
+  }catch(err){
+    statusLine.textContent = '저장 공간이 부족하거나 오류가 발생했습니다. 사진 용량을 줄여보세요.';
+  }
+}
+
+function resizeImage(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 700;
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.65));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+photoInput.addEventListener('change', async () => {
+  const file = photoInput.files[0];
+  if(!file){ previewThumb.style.display = 'none'; return; }
+  const dataUrl = await resizeImage(file);
+  previewThumb.src = dataUrl;
+  previewThumb.style.display = 'block';
+  photoInput.dataset.resized = dataUrl;
+});
+
+document.getElementById('entryForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  submitBtn.disabled = true;
+  submitBtn.textContent = '저장 중…';
+
+  const entry = {
+    id: 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+    date: document.getElementById('f-date').value,
+    name: document.getElementById('f-name').value.trim(),
+    item: document.getElementById('f-item').value.trim(),
+    vendor: document.getElementById('f-vendor').value.trim(),
+    amount: Number(document.getElementById('f-amount').value) || 0,
+    note: document.getElementById('f-note').value.trim(),
+    photo: photoInput.dataset.resized || null
+  };
+
+  entries.push(entry);
+  render();
+  await save();
+
+  ev.target.reset();
+  document.getElementById('f-date').valueAsDate = new Date();
+  previewThumb.style.display = 'none';
+  delete photoInput.dataset.resized;
+  submitBtn.disabled = false;
+  submitBtn.textContent = '항목 추가';
+});
+
+document.getElementById('printBtn').addEventListener('click', () => {
+  document.getElementById('printDateLine').textContent =
+    `활동비 지출 내역 및 증빙 사진 정리 · 출력일 ${new Date().toLocaleDateString('ko-KR')}`;
+  window.print();
+});
+
+load();
+</script>
+
+</body>
+</html>
